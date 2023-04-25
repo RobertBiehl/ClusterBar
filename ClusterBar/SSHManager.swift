@@ -12,10 +12,10 @@ class SSHManager {
     private let host: String
     private let port: Int32
     private let username: String
-    private let password: String
+    private let password: String?
     private let privateKeyURL: URL?
     
-    init(host: String, port: Int, username: String, password: String, privateKeyURL: URL? = nil) {
+    init(host: String, port: Int, username: String, password: String?, privateKeyURL: URL? = nil) {
         self.host = host
         self.port = Int32(port)
         self.username = username
@@ -36,8 +36,10 @@ class SSHManager {
                 let privateKey = String(data: privateKeyData, encoding: .utf8)
                 
                 try ssh.authenticate(username: username, privateKey: privateKey!)
-            } else {
+            } else if let password = password {
                 try ssh.authenticate(username: username, password: password)
+            } else {
+                completion(.failure(SSHManagerError.unexpectedExitCode(status: -1, command: command)))
             }
             
             
