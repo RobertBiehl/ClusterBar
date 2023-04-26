@@ -9,7 +9,7 @@
 import Cocoa
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotificationCenterDelegate  {
     
     
     var statusBarItem: NSStatusItem!
@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusBar()
         setupMenu()
         setupTimer()
+        setupUserNotificationCenter()
     }
     
     
@@ -62,6 +63,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     
+    private func setupUserNotificationCenter() {
+        NSUserNotificationCenter.default.delegate = self
+    }
+    
     private func updateMenu() {
         menu.removeAllItems()
         
@@ -83,8 +88,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let jobInfo = extendedInformation ? slurmController.jobInfo : slurmController.jobInfo.filter { $0.user == Settings.shared.username }
             let runningJobs = jobInfo.filter { $0.status == .running }
             let queuedJobs = jobInfo.filter { $0.status == .pending }
-            let otherJobs = jobInfo.filter { ($0.status != .running && $0.status != .pending) || $0.status == .failed && $0.age < 86400 }.sorted { $0.age > $1.age }.prefix(5)
-                        
+            let otherJobs = jobInfo.filter { ($0.status != .running && $0.status != .pending) || $0.status == .failed && $0.age < 86400 }.prefix(5)
+            
             
             if runningJobs.count > 0 {
                 let item = NSMenuItem(title: "🟢 Running", action: nil, keyEquivalent: "")
@@ -95,7 +100,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if extendedInformation {
                         itemTitle += " (User: \(job.user))"
                     }
-                    let item = NSMenuItem(title: itemTitle, action: nil, keyEquivalent: "")
+                    let item = NSMenuItem(title: itemTitle, action: #selector(handleJobClick(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = job
                     item.indentationLevel = 1
                     menu.addItem(item)
                 }
@@ -104,7 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 item.isEnabled = false
                 menu.addItem(item)
             }
-
+            
             if queuedJobs.count > 0 {
                 let item = NSMenuItem(title: "⏳ Queued", action: nil, keyEquivalent: "")
                 menu.addItem(item)
@@ -114,10 +121,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if extendedInformation {
                         itemTitle += " (User: \(job.user))"
                     }
-                    if extendedInformation {
-                        itemTitle += " (User: \(job.user))"
-                    }
-                    let item = NSMenuItem(title: itemTitle, action: nil, keyEquivalent: "")
+                    let item = NSMenuItem(title: itemTitle, action: #selector(handleJobClick(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = job
                     item.indentationLevel = 1
                     menu.addItem(item)
                 }
@@ -142,7 +148,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                     var itemTitle = "\(emoji) \(job.id): \(job.name)"
                     itemTitle += " (\(job.ageString))"
-                    let item = NSMenuItem(title: itemTitle, action: nil, keyEquivalent: "")
+                    if extendedInformation {
+                        itemTitle += " (User: \(job.user))"
+                    }
+                    let item = NSMenuItem(title: itemTitle, action: #selector(handleRecentJobClick(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = job
                     item.indentationLevel = 1
                     menu.addItem(item)
                 }
@@ -156,7 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
             
         }
-            
+        
         // 3. Refresh action
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshData), keyEquivalent: "r")
         refreshItem.target = self
@@ -173,6 +184,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quitMenuItem)
         
         updateStatusBarIcon()
+    }
+    
+    @objc private func handleJobClick(_ sender: NSMenuItem) {
+        guard let job = sender.representedObject as? Job else { return }
+        
+        let notification = NSUserNotification()
+        notification.title = "Job Options"
+        notification.informativeText = "Choose an action for job with ID \(job.id)"
+        notification.hasActionButton = false
+        
+        let openStdErrLog = NSUserNotificationAction(identifier: "openStdErrLog", title: "Open stderr log")
+        let openStdOutLog = NSUserNotificationAction(identifier: "openStdOutLog", title: "Open stdout log")
+        let cancelJob = NSUserNotificationAction(identifier: "cancelJob", title: "Cancel job")
+        notification.additionalActions = [openStdErrLog, openStdOutLog, cancelJob]
+        
+        notification.userInfo = ["jobID": "\(job.id)"]
+        
+        NSUserNotificationCenter.default.deliver(notification)
+    }
+    
+    @objc private func handleRecentJobClick(_ sender: NSMenuItem) {
+        guard let job = sender.representedObject as? Job else { return }
+        
+        let notification = NSUserNotification()
+        notification.title = "Recent Job Options"
+        notification.informativeText = "Choose an action for recent job with ID \(job.id)"
+        notification.hasActionButton = false
+
+        let openStdErrLog = NSUserNotificationAction(identifier: "openStdErrLog", title: "Open stderr log")
+        let openStdOutLog = NSUserNotificationAction(identifier: "openStdOutLog", title: "Open stdout log")
+        notification.additionalActions = [openStdErrLog, openStdOutLog]
+        
+        notification.userInfo = ["jobID": "\(job.id)", "isRecentJob": true]
+        
+        NSUserNotificationCenter.default.deliver(notification)
     }
     
     @objc private func refreshData() {
@@ -231,7 +277,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         slurmController = nil
     }
-       
+    
     
     // MARK: - NSMenuDelegate
     
@@ -239,6 +285,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         extendedInformation = NSEvent.modifierFlags.contains(.option)
         updateMenu()
         refreshData()
+    }
+    
+    // MARK: - NSUserNotificationCenterDelegate
+    
+    func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
+        guard let jobID = notification.userInfo?["jobID"] as? String else { return }
+        
+        if let response = notification.additionalActivationAction {
+            switch response.identifier {
+            case "openStdErrLog":
+                downloadLogForJob(jobID: jobID, logType: .stderr)
+            case "openStdOutLog":
+                downloadLogForJob(jobID: jobID, logType: .stdout)
+            case "cancelJob":
+                slurmController?.cancelSlurmJob(jobID: jobID) { result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success:
+                            print("Job \(jobID) has been cancelled")
+                        case .failure(let error):
+                            print("Failed to cancel job: \(error)")
+                        }
+                    }
+                }
+            default:
+                break
+            }
+        }
+        
+        center.removeDeliveredNotification(notification)
+    }
+    
+    private func downloadLogForJob(jobID: String, logType: SlurmController.LogType) {
+        slurmController?.downloadErrorLogForJob(jobID: jobID, logType: logType) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    print("Log for job \(jobID) has been downloaded")
+                case .failure(let error):
+                    print("Failed to download log: \(error)")
+                }
+            }
+        }
     }
 }
 

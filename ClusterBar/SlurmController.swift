@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 
 class SlurmController {
     private let sshManager: SSHManager
@@ -15,11 +16,11 @@ class SlurmController {
     
     init(host: String, port: Int, username: String, password: String?, privateKeyURL: URL? = nil) {
         sshManager = SSHManager(host: host, port: port, username: username, password: password, privateKeyURL: privateKeyURL)
-//        refreshData { result in
-//            if case .failure(let error) = result {
-//                print("Failed to fetch initial data: \(error)")
-//            }
-//        }
+        //        refreshData { result in
+        //            if case .failure(let error) = result {
+        //                print("Failed to fetch initial data: \(error)")
+        //            }
+        //        }
     }
     
     func refreshData(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -70,23 +71,23 @@ class SlurmController {
                     let name = String(components[0])
                     let status = String(components[1])
                     let partition = String(components[2])
-
+                    
                     let rangePattern = "\\[([0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)\\]"
                     let regex = try! NSRegularExpression(pattern: rangePattern, options: [])
                     let range = NSRange(location: 0, length: name.utf16.count)
-
+                    
                     if let match = regex.firstMatch(in: name, options: [], range: range) {
                         let matchedRange = match.range(at: 1)
                         let prefixRange = name.startIndex..<name.index(name.startIndex, offsetBy: matchedRange.lowerBound)
                         let prefix = String(name[prefixRange])
                         let rangeString = (name as NSString).substring(with: matchedRange)
                         let ranges = rangeString.split(separator: ",")
-
+                        
                         for subrange in ranges {
                             if let dashRange = subrange.range(of: "-", options: .numeric) {
                                 let lowerBound = Int(subrange[..<dashRange.lowerBound])!
                                 let upperBound = Int(subrange[dashRange.upperBound...])!
-
+                                
                                 for i in lowerBound...upperBound {
                                     let nodeName = "\(prefix)\(String(format: "%02d", i))"
                                     nodes.append(Node(name: nodeName, status: status, partition: partition))
@@ -131,7 +132,7 @@ class SlurmController {
             return .unknown
         }
     }
-
+    
     private func fetchJobInfo(maxJobs: Int = 128, completion: @escaping (Result<[Job], Error>) -> Void) {
         let command = "squeue -h -o '%i|%u|%j|%t|%M' && sacct -X -n -P -o 'JobID,User,JobName,State,Elapsed' --starttime 'now-7days' | head -n \(maxJobs)"
         
@@ -154,7 +155,77 @@ class SlurmController {
                 }
                 
                 let deduplicatedJobs = Array(jobDict.values)
-                completion(.success(deduplicatedJobs))
+                let sortedJobs = deduplicatedJobs.sorted(by: { Int($0.id) ?? 0 > Int($1.id) ?? 0 })
+                completion(.success(sortedJobs))
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    func cancelSlurmJob(jobID: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        let command = "scancel \(jobID)"
+        
+        sshManager.executeCommand(command) { result in
+            switch result {
+            case .success(_):
+                completion(.success(()))
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    enum LogType {
+        case stderr
+        case stdout
+    }
+
+    func downloadErrorLogForJob(jobID: String, logType: LogType = .stderr, completion: @escaping (Result<Void, Error>) -> Void) {
+        let command = "scontrol show job \(jobID) -o"
+        
+        sshManager.executeCommand(command) { result in
+            switch result {
+            case .success(let output):
+                let logFilePattern = logType == .stderr ? "StdErr=(\\S+)" : "StdOut=(\\S+)"
+                let regex = try! NSRegularExpression(pattern: logFilePattern, options: [])
+                let range = NSRange(location: 0, length: output.utf16.count)
+                if let match = regex.firstMatch(in: output, options: [], range: range) {
+                    let matchedRange = match.range(at: 1)
+                    let logFilePath = (output as NSString).substring(with: matchedRange)
+                    
+                    let catCommand = "cat \(logFilePath)"
+                    self.sshManager.executeCommand(catCommand) { catResult in
+                        switch catResult {
+                        case .success(let logContent):
+                            do {
+                                let tempDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                                let logFileName = logType == .stderr ? "slurm_error_log_\(jobID).txt" : "slurm_output_log_\(jobID).txt"
+                                let tempFileURL = tempDirectoryURL.appendingPathComponent(logFileName)
+                                
+                                try logContent.write(to: tempFileURL, atomically: true, encoding: .utf8)
+                                
+                                let consoleAppURL = URL(fileURLWithPath: "/System/Applications/Utilities/Console.app")
+                                let configuration = NSWorkspace.OpenConfiguration()
+                                
+                                NSWorkspace.shared.open([tempFileURL], withApplicationAt: consoleAppURL, configuration: configuration, completionHandler: { (success, error) in
+                                    if let error = error {
+                                        completion(.failure(error))
+                                    } else {
+                                        completion(.success(()))
+                                    }
+                                })
+                            } catch {
+                                completion(.failure(error))
+                            }
+                        case .failure(let error):
+                            completion(.failure(error))
+                        }
+                    }
+                } else {
+                    let errorDescription = logType == .stderr ? "Error log file not found" : "Output log file not found"
+                    completion(.failure(NSError(domain: "SlurmController", code: -1, userInfo: [NSLocalizedDescriptionKey: errorDescription])))
+                }
             case .failure(let error):
                 completion(.failure(error))
             }
@@ -166,7 +237,7 @@ struct Node {
     let name: String
     let status: NodeStatus
     let partition: String
-
+    
     enum NodeStatus: String {
         case idle = "idle"
         case allocated = "allocated"
@@ -174,7 +245,7 @@ struct Node {
         case drained = "drained"
         case unknown = "unknown"
     }
-
+    
     init(name: String, status: String, partition: String) {
         self.name = name
         self.status = NodeStatus(rawValue: status) ?? .unknown
@@ -188,7 +259,7 @@ struct Job {
     let name: String
     let status: JobStatus
     let ageString: String
-
+    
     enum JobStatus: String {
         case running = "R"
         case pending = "PD"
@@ -199,7 +270,7 @@ struct Job {
         case timeout = "TO"
         case unknown = "unknown"
     }
-
+    
     init(id: String, user: String, name: String, status: String, ageString: String) {
         self.id = id
         self.user = user
@@ -207,19 +278,19 @@ struct Job {
         self.status = JobStatus(rawValue: status) ?? .unknown
         self.ageString = ageString
     }
-
+    
     var age: TimeInterval {
         return TimeInterval(parseAgeString(ageString))
     }
-
+    
     private func parseAgeString(_ ageString: String) -> Int {
         let components = ageString.split(separator: ":")
         guard components.count == 3 else { return 0 }
-
+        
         let hours = Int(components[0]) ?? 0
         let minutes = Int(components[1]) ?? 0
         let seconds = Int(components[2]) ?? 0
-
+        
         return (hours * 3600) + (minutes * 60) + seconds
     }
 }

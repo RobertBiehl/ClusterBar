@@ -32,10 +32,7 @@ class SSHManager {
             let ssh = try SSH(host: host, port: port)
             
             if let privateKeyURL = privateKeyURL {
-                let privateKeyData = try Data(contentsOf: privateKeyURL)
-                let privateKey = String(data: privateKeyData, encoding: .utf8)
-                
-                try ssh.authenticate(username: username, privateKey: privateKey!)
+                try ssh.authenticate(username: username, privateKey: privateKeyURL.path())
             } else if let password = password {
                 try ssh.authenticate(username: username, password: password)
             } else {
