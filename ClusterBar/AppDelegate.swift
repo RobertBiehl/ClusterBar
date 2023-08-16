@@ -88,14 +88,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
             let jobInfo = extendedInformation ? slurmController.jobInfo : slurmController.jobInfo.filter { $0.user == Settings.shared.username }
             let runningJobs = jobInfo.filter { $0.status == .running }
             let queuedJobs = jobInfo.filter { $0.status == .pending }
-            let otherJobs = jobInfo.filter { ($0.status != .running && $0.status != .pending) || $0.status == .failed && $0.age < 86400 }.prefix(5)
+            let otherJobs = jobInfo.filter { ($0.status != .running && $0.status != .pending) || $0.status == .failed && $0.age < 86400 }
             
             
             if runningJobs.count > 0 {
                 let item = NSMenuItem(title: "🟢 Running", action: nil, keyEquivalent: "")
                 menu.addItem(item)
                 for job in runningJobs {
-                    var itemTitle = "\(job.id): \(job.name)"
+                    var itemTitle = "\(job.id) [\(job.partition).\(job.nodeName)]: \(job.name)"
                     itemTitle += " (\(job.ageString))"
                     if extendedInformation {
                         itemTitle += " (User: \(job.user))"
@@ -115,8 +115,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
             if queuedJobs.count > 0 {
                 let item = NSMenuItem(title: "⏳ Queued", action: nil, keyEquivalent: "")
                 menu.addItem(item)
-                for job in queuedJobs {
-                    var itemTitle = "\(job.id): \(job.name)"
+                let numQueuedJobs = queuedJobs.count
+                let showNumQueuedJobs = 32
+                for job in queuedJobs.prefix(showNumQueuedJobs) {
+                    var itemTitle = "\(job.id) [\(job.partition)]: \(job.name)"
                     itemTitle += " (\(job.ageString))"
                     if extendedInformation {
                         itemTitle += " (User: \(job.user))"
@@ -127,6 +129,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
                     item.indentationLevel = 1
                     menu.addItem(item)
                 }
+                if (numQueuedJobs > showNumQueuedJobs) {
+                    let item = NSMenuItem(title: "\(numQueuedJobs - showNumQueuedJobs) more", action: nil, keyEquivalent: "")
+                    item.indentationLevel = 1
+                    item.isEnabled = false
+                    menu.addItem(item)
+                }
             }
             
             menu.addItem(.separator())
@@ -134,7 +142,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
             if otherJobs.count > 0 {
                 let item = NSMenuItem(title: "📋 Recent", action: nil, keyEquivalent: "")
                 menu.addItem(item)
-                for job in otherJobs {
+                let numOtherJobs = otherJobs.count
+                let showNumOtherJobs = 32
+                for job in otherJobs.prefix(showNumOtherJobs) {
                     let emoji: String
                     switch job.status {
                     case .completed:
@@ -143,10 +153,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
                         emoji = "❌"
                     case .cancelled:
                         emoji = "⛔️"
-                    default:
+                    case .unknown:
                         emoji = "❓"
+                    default:
+                        emoji = job.status.rawValue
                     }
-                    var itemTitle = "\(emoji) \(job.id): \(job.name)"
+                    var itemTitle = "\(emoji) \(job.id) [\(job.partition)]: \(job.name)"
                     itemTitle += " (\(job.ageString))"
                     if extendedInformation {
                         itemTitle += " (User: \(job.user))"
@@ -155,6 +167,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSUserNotifi
                     item.target = self
                     item.representedObject = job
                     item.indentationLevel = 1
+                    menu.addItem(item)
+                }
+                
+                if (numOtherJobs > showNumOtherJobs) {
+                    let item = NSMenuItem(title: "\(numOtherJobs - showNumOtherJobs) more", action: nil, keyEquivalent: "")
+                    item.indentationLevel = 1
+                    item.isEnabled = false
                     menu.addItem(item)
                 }
             } else {

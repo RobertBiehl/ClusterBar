@@ -122,45 +122,59 @@ class SlurmController {
             return .suspended
         case "C", "COMPLETED":
             return .completed
-        case "CA", "CANCELLED":
-            return .cancelled
         case "F", "FAILED":
             return .failed
         case "TO", "TIMEOUT":
             return .timeout
+        case "CA", "CANCELLED":
+            return .cancelled
+        case _ where status.hasPrefix("CANCELLED"): // TODO add association resolver to find out which user cancelled the job (scontrol show assoc)
+            return .cancelled
         default:
             return .unknown
         }
     }
     
-    private func fetchJobInfo(maxJobs: Int = 128, completion: @escaping (Result<[Job], Error>) -> Void) {
-        let command = "squeue -h -o '%i|%u|%j|%t|%M' && sacct -X -n -P -o 'JobID,User,JobName,State,Elapsed' --starttime 'now-7days' | head -n \(maxJobs)"
+    private func fetchJobInfo(maxJobs: Int = 256, completion: @escaping (Result<[Job], Error>) -> Void) {
+        let command = "squeue -h -o '%i|%u|%j|%t|%M|%P|%N' && sacct -X -n -P -o 'JobID,User,JobName,State,Elapsed,Partition,NodeList' --starttime 'now-7days' | head -n \(maxJobs)"
         
         sshManager.executeCommand(command) { result in
-            switch result {
-            case .success(let output):
-                let lines = output.split(separator: "\n")
-                var jobDict: [String: Job] = [:]
-                
-                for line in lines {
-                    let components = line.split(separator: "|")
-                    guard components.count == 5 else { continue }
-                    let status = self.parseJobStatus(String(components[3]))
-                    let job = Job(id: String(components[0]), user: String(components[1]), name: String(components[2]), status: status.rawValue, ageString: String(components[4]))
+                switch result {
+                case .success(let output):
+                    let lines = output.split(separator: "\n")
+                    var jobDict: [String: Job] = [:]
                     
-                    // Deduplicate by adding the job to the dictionary only if it's not already present
-                    if jobDict[job.id] == nil {
-                        jobDict[job.id] = job
+                    for line in lines {
+                        let components = line.split(separator: "|")
+                        guard components.count >= 5 else { continue } // Update the count check to a more flexible one
+                        
+                        let status = self.parseJobStatus(String(components[3]))
+                        
+                        // Handling different outputs between squeue and sacct
+                        let partition = (components.count > 5) ? String(components[5]) : "Unknown"
+                        let nodeName = (components.count > 6) ? String(components[6]) : "Unknown"
+                        
+                        let job = Job(id: String(components[0]),
+                                      user: String(components[1]),
+                                      name: String(components[2]),
+                                      status: status.rawValue,
+                                      ageString: String(components[4]),
+                                      partition: partition,
+                                      nodeName: nodeName) // Include the nodeName in Job instantiation
+                        
+                        // Deduplicate by adding the job to the dictionary only if it's not already present
+                        if jobDict[job.id] == nil {
+                            jobDict[job.id] = job
+                        }
                     }
+                    
+                    let deduplicatedJobs = Array(jobDict.values)
+                    let sortedJobs = deduplicatedJobs.sorted(by: { Int($0.id) ?? 0 > Int($1.id) ?? 0 })
+                    completion(.success(sortedJobs))
+                case .failure(let error):
+                    completion(.failure(error))
                 }
-                
-                let deduplicatedJobs = Array(jobDict.values)
-                let sortedJobs = deduplicatedJobs.sorted(by: { Int($0.id) ?? 0 > Int($1.id) ?? 0 })
-                completion(.success(sortedJobs))
-            case .failure(let error):
-                completion(.failure(error))
             }
-        }
     }
     
     func cancelSlurmJob(jobID: String, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -259,6 +273,8 @@ struct Job {
     let name: String
     let status: JobStatus
     let ageString: String
+    let partition: String
+    let nodeName: String
     
     enum JobStatus: String {
         case running = "R"
@@ -271,12 +287,14 @@ struct Job {
         case unknown = "unknown"
     }
     
-    init(id: String, user: String, name: String, status: String, ageString: String) {
+    init(id: String, user: String, name: String, status: String, ageString: String, partition: String?, nodeName: String?) {
         self.id = id
         self.user = user
         self.name = name
         self.status = JobStatus(rawValue: status) ?? .unknown
         self.ageString = ageString
+        self.partition = partition ?? "unknown"
+        self.nodeName = nodeName ?? "unknown"
     }
     
     var age: TimeInterval {
