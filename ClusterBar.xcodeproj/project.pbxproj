@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		750AA81F2CD4E53C00EF1646 /* Shout in Frameworks */ = {isa = PBXBuildFile; productRef = 750AA81E2CD4E53C00EF1646 /* Shout */; };
 		E10840EA29F5C8D90045ED54 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10840E929F5C8D90045ED54 /* SettingsWindowController.swift */; };
 		E10840EC29F5C9F00045ED54 /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10840EB29F5C9F00045ED54 /* SettingsViewController.swift */; };
 		E1C6A20429F4476900BE23F2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6A20329F4476900BE23F2 /* AppDelegate.swift */; };
@@ -18,7 +19,6 @@
 		E1C6A22229F4476B00BE23F2 /* ClusterBarUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6A22129F4476B00BE23F2 /* ClusterBarUITestsLaunchTests.swift */; };
 		E1C6A22F29F4479700BE23F2 /* SSHManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6A22E29F4479700BE23F2 /* SSHManager.swift */; };
 		E1C6A23129F448E400BE23F2 /* SlurmController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6A23029F448E400BE23F2 /* SlurmController.swift */; };
-		E1C6A23A29F4552800BE23F2 /* Shout in Frameworks */ = {isa = PBXBuildFile; productRef = E1C6A23929F4552800BE23F2 /* Shout */; };
 		E1C6A23E29F4861B00BE23F2 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6A23D29F4861B00BE23F2 /* Settings.swift */; };
 /* End PBXBuildFile section */
 
@@ -64,7 +64,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E1C6A23A29F4552800BE23F2 /* Shout in Frameworks */,
+				750AA81F2CD4E53C00EF1646 /* Shout in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -157,7 +157,7 @@
 			);
 			name = ClusterBar;
 			packageProductDependencies = (
-				E1C6A23929F4552800BE23F2 /* Shout */,
+				750AA81E2CD4E53C00EF1646 /* Shout */,
 			);
 			productName = ClusterBar;
 			productReference = E1C6A20029F4476900BE23F2 /* ClusterBar.app */;
@@ -232,7 +232,7 @@
 			);
 			mainGroup = E1C6A1F729F4476900BE23F2;
 			packageReferences = (
-				E1C6A23829F4552800BE23F2 /* XCRemoteSwiftPackageReference "Shout" */,
+				750AA81D2CD4E53C00EF1646 /* XCRemoteSwiftPackageReference "Shout" */,
 			);
 			productRefGroup = E1C6A20129F4476900BE23F2 /* Products */;
 			projectDirPath = "";
@@ -454,7 +454,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RXRZ8TTWZS;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClusterBar/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -483,7 +483,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RXRZ8TTWZS;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClusterBar/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -615,20 +615,20 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		E1C6A23829F4552800BE23F2 /* XCRemoteSwiftPackageReference "Shout" */ = {
+		750AA81D2CD4E53C00EF1646 /* XCRemoteSwiftPackageReference "Shout" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/glushchenko/Shout";
+			repositoryURL = "https://github.com/jakeheis/Shout";
 			requirement = {
-				branch = master;
-				kind = branch;
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.7;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		E1C6A23929F4552800BE23F2 /* Shout */ = {
+		750AA81E2CD4E53C00EF1646 /* Shout */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E1C6A23829F4552800BE23F2 /* XCRemoteSwiftPackageReference "Shout" */;
+			package = 750AA81D2CD4E53C00EF1646 /* XCRemoteSwiftPackageReference "Shout" */;
 			productName = Shout;
 		};
 /* End XCSwiftPackageProductDependency section */

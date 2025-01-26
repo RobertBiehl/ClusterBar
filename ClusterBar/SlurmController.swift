@@ -63,49 +63,65 @@ class SlurmController {
         sshManager.executeCommand("sinfo -h -o '%N %T %P'") { result in
             switch result {
             case .success(let output):
-                let lines = output.split(separator: "\n")
+                let lines = output.components(separatedBy: .newlines)
+                                 .filter { !$0.isEmpty }
                 var nodes: [Node] = []
+                
                 for line in lines {
                     let components = line.split(separator: " ")
-                    guard components.count == 3 else { continue }
-                    let name = String(components[0])
-                    let status = String(components[1])
-                    let partition = String(components[2])
+                    guard components.count >= 3 else { continue }
                     
-                    let rangePattern = "\\[([0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)\\]"
-                    let regex = try! NSRegularExpression(pattern: rangePattern, options: [])
-                    let range = NSRange(location: 0, length: name.utf16.count)
+                    let nodeNames = String(components[0])
+                    var status = String(components[1])
+                    let partition = components[2...].joined(separator: " ")
                     
-                    if let match = regex.firstMatch(in: name, options: [], range: range) {
-                        let matchedRange = match.range(at: 1)
-                        let prefixRange = name.startIndex..<name.index(name.startIndex, offsetBy: matchedRange.lowerBound)
-                        let prefix = String(name[prefixRange])
-                        let rangeString = (name as NSString).substring(with: matchedRange)
-                        let ranges = rangeString.split(separator: ",")
+                    // Handle status with asterisk
+                    if status.hasSuffix("*") {
+                        status = String(status.dropLast())
+                    }
+                    
+                    // Handle comma-separated node groups
+                    let nodeGroups = nodeNames.split(separator: ",")
+                    
+                    for nodeGroup in nodeGroups {
+                        let rangePattern = "\\[([0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*)\\]"
+                        let regex = try! NSRegularExpression(pattern: rangePattern, options: [])
+                        let range = NSRange(location: 0, length: nodeGroup.utf16.count)
                         
-                        for subrange in ranges {
-                            if let dashRange = subrange.range(of: "-", options: .numeric) {
-                                let lowerBound = Int(subrange[..<dashRange.lowerBound])!
-                                let upperBound = Int(subrange[dashRange.upperBound...])!
-                                
-                                for i in lowerBound...upperBound {
-                                    let nodeName = "\(prefix)\(String(format: "%02d", i))"
-                                    nodes.append(Node(name: nodeName, status: status, partition: partition))
-                                }
-                            } else {
-                                if let intValue = Int(subrange) {
-                                    let nodeName = "\(prefix)\(String(format: "%02d", intValue))"
-                                    nodes.append(Node(name: nodeName, status: status, partition: partition))
+                        if let match = regex.firstMatch(in: String(nodeGroup), options: [], range: range) {
+                            let matchedRange = match.range(at: 1)
+                            let nodeGroupStr = String(nodeGroup)
+                            let prefixEndIndex = nodeGroupStr.index(nodeGroupStr.startIndex,
+                                offsetBy: matchedRange.lowerBound - 1)
+                            let prefix = String(nodeGroupStr[..<prefixEndIndex])
+                            
+                            let rangeString = (nodeGroupStr as NSString).substring(with: matchedRange)
+                            let ranges = rangeString.split(separator: ",")
+                            
+                            for subrange in ranges {
+                                if let dashRange = subrange.range(of: "-") {
+                                    let lowerBound = Int(subrange[..<dashRange.lowerBound])!
+                                    let upperBound = Int(subrange[dashRange.upperBound...])!
+                                    
+                                    for i in lowerBound...upperBound {
+                                        let nodeName = "\(prefix)\(String(format: "%02d", i))"
+                                        nodes.append(Node(name: nodeName, status: status, partition: partition))
+                                    }
                                 } else {
-                                    print("Error: Cannot convert subrange to Int: \(subrange)")
+                                    if let intValue = Int(subrange) {
+                                        let nodeName = "\(prefix)\(String(format: "%02d", intValue))"
+                                        nodes.append(Node(name: nodeName, status: status, partition: partition))
+                                    }
                                 }
                             }
+                        } else {
+                            // Handle single node names without ranges
+                            nodes.append(Node(name: String(nodeGroup), status: status, partition: partition))
                         }
-                    } else {
-                        nodes.append(Node(name: name, status: status, partition: partition))
                     }
                 }
                 completion(.success(nodes))
+                
             case .failure(let error):
                 completion(.failure(error))
             }
@@ -136,7 +152,7 @@ class SlurmController {
     }
     
     private func fetchJobInfo(maxJobs: Int = 256, completion: @escaping (Result<[Job], Error>) -> Void) {
-        let command = "squeue -h -o '%i|%u|%j|%t|%M|%P|%N' && sacct -X -n -P -o 'JobID,User,JobName,State,Elapsed,Partition,NodeList' --starttime 'now-7days' | head -n \(maxJobs)"
+        let command = "squeue -h -o '%i|%u|%j|%t|%M|%P|%N' && sacct -X -n -P -o 'JobID,User,JobName,State,Elapsed,Partition,NodeList' --starttime 'now-7days'"
         
         sshManager.executeCommand(command) { result in
                 switch result {
@@ -161,6 +177,10 @@ class SlurmController {
                                       ageString: String(components[4]),
                                       partition: partition,
                                       nodeName: nodeName) // Include the nodeName in Job instantiation
+                        
+                        if (job.age == 0 && job.status == .cancelled) {
+                            continue
+                        }
                         
                         // Deduplicate by adding the job to the dictionary only if it's not already present
                         if jobDict[job.id] == nil {
@@ -254,16 +274,35 @@ struct Node {
     
     enum NodeStatus: String {
         case idle = "idle"
-        case allocated = "allocated"
-        case mixed = "mixed"
+        case allocated = "allocated"  // includes mixed status
         case drained = "drained"
+        case down = "down"
         case unknown = "unknown"
+        
+        init(rawValue: String) {
+            // Remove asterisk if present
+            let cleanValue = rawValue.hasSuffix("*") ?
+                String(rawValue.dropLast()) : rawValue
+            
+            switch cleanValue.lowercased() {
+            case "idle": self = .idle
+            case "allocated", "mixed": self = .allocated  // treat mixed as allocated
+            case "drained": self = .drained
+            case "down": self = .down
+            default: self = .unknown
+            }
+        }
+        
+        // Add static function to create from string
+        static func from(_ string: String) -> NodeStatus {
+            return NodeStatus(rawValue: string)
+        }
     }
     
     init(name: String, status: String, partition: String) {
-        self.name = name
-        self.status = NodeStatus(rawValue: status) ?? .unknown
-        self.partition = partition
+       self.name = name
+        self.status = NodeStatus.from(status)
+       self.partition = partition
     }
 }
 
